@@ -1,0 +1,20 @@
+{
+  "name": "organic-shellreactor",
+  "version": "0.0.1",
+  "main": "index.js",
+  "scripts": {
+    "test": "jasmine-node ./tests/"
+  },
+  "repository" : {
+    "type" : "git",
+    "url" : "https://github.com/outbounder/organic-shellreactor.git"
+  },
+  "dependencies": {
+    "organic": "0.1.1",
+    "shelljs": "0.2.6"
+  },
+  "devDependencies": {
+    "jasmine-node": "latest"
+  },
+  "license": "MIT"
+}
