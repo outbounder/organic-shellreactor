@@ -14,7 +14,8 @@
     "shelljs": "0.2.6"
   },
   "devDependencies": {
-    "jasmine-node": "latest"
+    "jasmine-node": "latest",
+    "stream-buffers": "0.2.5"
   },
   "license": "MIT"
 }
