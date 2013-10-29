@@ -7,7 +7,6 @@ module.exports = function(plasma, config) {
   var constructChemicalFromCmd = function(value) {
     var argv = value.split(" ")
     var chemical = {
-      type: argv.shift(),
       value: []
     }
     var memoKey = null
@@ -28,15 +27,20 @@ module.exports = function(plasma, config) {
   }
 
   var executeCommand = function(c, f, cmd, handler) {
-    console.log(cmd)
+    console.info("exec: "+cmd)
     if(typeof cmd == "function") {
       return cmd(c, function(r){
         handler(r, createNext(c, f))
       })
     }
     if(cmd.charAt(0) === cmd.charAt(0).toUpperCase()) {
+      var a = cmd.split("")
+      a[0] = cmd.charAt(0).toLowerCase()
+      cmd = a.join("")
       var chemical = constructChemicalFromCmd(cmd)
-      return plasma.emit(chemical, function(r){
+      for(var key in chemical)
+        c[key] = chemical[key]
+      return plasma.emit(c, function(r){
         handler(r, createNext(c, f))
       })
     }
@@ -121,13 +125,20 @@ module.exports = function(plasma, config) {
   
   plasma.on(config.reactOn, function(c, next){
     if(!fs.existsSync(resolvePath(c.value[0]))) return false // XXX
+
     var f = function(r){
       if(r instanceof Error) return next && next(r)
       if(r.code && r.code != 0) return next && next(r)
-      var type = c.value.shift()
-      if(type) {
-        var reaction = require(resolvePath(type))
-        reaction(c, createNext(c, f))
+      if(c.value[0]) {
+        fs.exists(resolvePath(c.value[0]), function(found){
+          if(found) {
+            var type = c.value.shift()
+            var reaction = require(resolvePath(type))
+            reaction(c, createNext(c, f))  
+          } else {
+            plasma.emit(c, next)
+          }
+        })
       } else
         next && next(r)
     }
