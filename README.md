@@ -6,7 +6,8 @@ container for commands to be executed in chain
 ## DNA configuration
 
     {
-      "reactOn": "react"
+      "reactOn": "react",
+      "reactions": "path/to/folder"
     }
 
 ## reacts to chemicals `dna.reactOn`
@@ -14,41 +15,51 @@ container for commands to be executed in chain
 Expected chemical structure:
 
     {
-      commands: [String],
-      value: [String],
-      commandsWrapper: String
+      value: [String]
     }
 
-When chemical is captured the organelle will start shifting `value` array in FIFO manner and re-emit the captured chemical into plasma. Any organelle which captures the reemitted chemical can modify `commands`, `value` and `commandsWrapper` properties after which can pass control back to the shellreactor by calling provided callback method.
+When chemical is captured the organelle does `fs.existsSync` check for 
+`dna.reactions+value[0]+.js`. If such exists it is loaded and control flow is provided to the reaction.
 
-This behaviour will repeat until `value` array is totally drained (empty). Once that happens the organelle will execute all commands buffered in `commands` array joined by ` && `. The executed commands as ChildProcess are returned as callback of the whole reaction.
+A reaction is assumed to have the following form:
 
-## example
+    module.exports = function(c, next){}
+
+The `c` object is the reference to the initial chemical captured by the organelle.
+The `next` method has the following signatures:
+
+    next(wrapperCommand, commands, handler)
+    next(wrapperCommand, commands)
+    next(commands, handler)
+    next(commands)
+
+    next(object)
+    next()
+
+All execute the provided `commands` (array or single command string) in the local environment as child process except `next(object)` and `next()` - they return response to outer reactions.
+
+In case `command` starts with `@`, then it is transformed to chemical and re-emitted to  plasma.
+
+## simple example
 
     var plasma = new Plasma()
     var reactor = new ShellReactor(plasma, {
-      reactOn: "execute"
+      reactOn: "execute",
+      reactions: {
+        "reaction1": function(c, next){
+          next(["echo test", "@other -propertyName test"])
+        }
+      }
     })
 
-    plasma.on("console.log value", function(c, next){
-      console.log(c.value)
-      next && next()
-    })
-
-    plasma.on("console.log commands", function(c, next){
-      console.log(c.commands)
-      next && next()
-    })
-
-    plasma.on("start npm install", function(c, next){
-      c.commands.push("npm install")
+    plasma.on("other", function(c, next){
+      console.log(c.propertyName)
       next && next()
     })
 
     plasma.emit({
       type: "execute",
-      value: ["console.log value", "console.log commands", "start npm install"]
-    }, function(childProcess){
-      childProcess.stdout.pipe(process.stdout)
-      childProcess.stdin.pipe(process.stdin)
+      value: ["reaction1"]
+    }, function(r){
+      console.log(r)
     })

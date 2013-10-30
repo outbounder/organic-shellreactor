@@ -1,12 +1,14 @@
 var shelljs = require("shelljs")
 var fs = require('fs')
 var path = require("path")
+var async = require("async")
 
 module.exports = function(plasma, config) {
 
   var constructChemicalFromCmd = function(value) {
     var argv = value.split(" ")
     var chemical = {
+      type: argv.shift(),
       value: []
     }
     var memoKey = null
@@ -27,33 +29,39 @@ module.exports = function(plasma, config) {
   }
 
   var executeCommand = function(c, f, cmd, handler) {
-    console.info("exec: "+cmd)
+    if(c.verbose)
+      console.info("exec: "+cmd)
     if(typeof cmd == "function") {
       return cmd(c, function(r){
         handler(r, createNext(c, f))
       })
     }
-    if(cmd.charAt(0) === cmd.charAt(0).toUpperCase()) {
-      var a = cmd.split("")
-      a[0] = cmd.charAt(0).toLowerCase()
-      cmd = a.join("")
-      var chemical = constructChemicalFromCmd(cmd)
-      for(var key in chemical)
-        c[key] = chemical[key]
-      return plasma.emit(c, function(r){
-        handler(r, createNext(c, f))
+    if(cmd.charAt(0) === "@") {
+      var chemical = constructChemicalFromCmd(cmd.substr(1))
+      for(var key in c)
+        if(!chemical[key])
+          chemical[key] = c[key]
+      return plasma.emit(chemical, function(r){
+        handler(r || chemical, createNext(c, f))
       })
     }
     var child = shelljs.exec(cmd, {async: true, silent: true})
     if(c.output)
-      child.stdout.pipe(c.output)
+      child.stdout.on('data', function(chunk){
+        c.output.write(chunk)
+      })
     if(c.error)
-      child.stderr.pipe(c.error)
+      child.stderr.on('data', function(chunk){
+        c.error.write(chunk)
+      })
     child.on("error", function(err){
       handler(err, createNext(c, f))
     })
     child.on("close", function(code){
-      handler({code: code}, createNext(c, f))
+      if(code != 0)
+        handler(new Error(cmd), createNext(c, f))
+      else
+        handler(c, createNext(c, f))
     })
   }
 
@@ -69,7 +77,7 @@ module.exports = function(plasma, config) {
       }
 
       if(arguments.length == 2) {
-        if(typeof arguments[0] == "object" && typeof arguments[1] == "function")
+        if(typeof arguments[0] == "object" && !Array.isArray(arguments[0]) && typeof arguments[1] == "function")
           return arguments[1](arguments[0])
         if(typeof arguments[1] == "string" || Array.isArray(arguments[1])) {
           var wrapperCommand = arguments[0]
@@ -86,13 +94,16 @@ module.exports = function(plasma, config) {
           if(Array.isArray(commands))
             return async.eachSeries(commands, function(cmd, next){
               executeCommand(c, f, cmd, function(r){
-                if(r.code)
-                  next()
+                if(r instanceof Error)
+                  next(r)
                 else
-                  next(new Error(cmd+" failed."))
+                  next()
               })
             }, function(err){
-              handler({code: err==null?0:1, err: err}, createNext(c, f))
+              if(err != null)
+                handler(err, createNext(c, f))
+              else
+                handler(c, createNext(c, f))
             })
         }
       }
@@ -103,11 +114,17 @@ module.exports = function(plasma, config) {
           return executeCommand(c, f, commands, f)
         if(Array.isArray(commands))
           return async.eachSeries(commands, function(cmd, next){
-            executeCommand(c, f, cmd, function(){
-              next()
+            executeCommand(c, f, cmd, function(r){
+              if(r instanceof Error)
+                next(r)
+              else
+                next()
             })
           }, function(err){
-            f(err, createNext(c, f))
+            if(err != null)
+              f(err, createNext(c, f))
+            else
+              f(c, createNext(c, f))
           })
         if(typeof commands == "object")
           return f(commands)
@@ -120,27 +137,35 @@ module.exports = function(plasma, config) {
   } 
 
   var resolvePath = function(type) {
-    return path.join(process.cwd(), config.reactions, type+".js")
+    if(config.reactions.indexOf("/") === 0 || config.reactions.indexOf(":\\") == 1)
+      return path.join(config.reactions, type+".js")
+    else
+      return path.join(process.cwd(), config.reactions, type+".js")
   }
   
   plasma.on(config.reactOn, function(c, next){
-    if(!fs.existsSync(resolvePath(c.value[0]))) return false // XXX
+    if(typeof config.reactions == "string")
+      if(!fs.existsSync(resolvePath(c.value[0]))) return false // XXX
+    if(typeof config.reactions == "object")
+      if(!config.reactions[c.value[0]]) return false
 
     var f = function(r){
       if(r instanceof Error) return next && next(r)
-      if(r.code && r.code != 0) return next && next(r)
       if(c.value[0]) {
-        fs.exists(resolvePath(c.value[0]), function(found){
-          if(found) {
-            var type = c.value.shift()
-            var reaction = require(resolvePath(type))
-            reaction(c, createNext(c, f))  
-          } else {
-            plasma.emit(c, next)
-          }
-        })
+        if(typeof config.reactions == "string") {
+          var type = c.value.shift()
+          var reaction = require(resolvePath(type))
+          reaction(c, createNext(c, f))
+        }
+        if(typeof config.reactions == "object") {
+          var type = c.value.shift()
+          var reaction = config.reactions[type]
+          if(typeof reaction == "string")
+            reaction = require(reaction)
+          reaction(c, createNext(c, f))  
+        }
       } else
-        next && next(r)
+        next && next(r || c)
     }
     f(c)
   })
