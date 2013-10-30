@@ -1,13 +1,13 @@
 # organic-shellreactor
 
-Continuation style passing organelle for reacting with incoming chemical as 
-container for commands to be executed in chain
+Continuation style passing organelle for reacting with chemical forming a chain 
+to be executed as local shell commands or as logic scripts
 
 ## DNA configuration
 
     {
       "reactOn": "react",
-      "reactions": "path/to/folder"
+      "reactions": "path/to/folder" || Object { "name1": "path/to/reaction", "name2": function(c, next) }
     }
 
 ## reacts to chemicals `dna.reactOn`
@@ -15,30 +15,11 @@ container for commands to be executed in chain
 Expected chemical structure:
 
     {
-      value: [String]
+      value: [String],
+      output: WritableStream, 
+      error: WritableStream, 
+      ...
     }
-
-When chemical is captured the organelle does `fs.existsSync` check for 
-`dna.reactions+value[0]+.js`. If such exists it is loaded and control flow is provided to the reaction.
-
-A reaction is assumed to have the following form:
-
-    module.exports = function(c, next){}
-
-The `c` object is the reference to the initial chemical captured by the organelle.
-The `next` method has the following signatures:
-
-    next(wrapperCommand, commands, handler)
-    next(wrapperCommand, commands)
-    next(commands, handler)
-    next(commands)
-
-    next(object)
-    next()
-
-All execute the provided `commands` (array or single command string) in the local environment as child process except `next(object)` and `next()` - they return response to outer reactions.
-
-In case `command` starts with `@`, then it is transformed to chemical and re-emitted to  plasma.
 
 ## simple example
 

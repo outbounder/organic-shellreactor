@@ -153,16 +153,26 @@ module.exports = function(plasma, config) {
       if(r instanceof Error) return next && next(r)
       if(c.value[0]) {
         if(typeof config.reactions == "string") {
-          var type = c.value.shift()
-          var reaction = require(resolvePath(type))
-          reaction(c, createNext(c, f))
+          fs.exists(resolvePath(c.value[0]), function(found){
+            if(found) {
+              var type = c.value.shift()
+              var reaction = require(resolvePath(type))
+              reaction(c, createNext(c, f))    
+            } else {
+              plasma.emit(c, createNext(c, f))
+            }
+          })
         }
         if(typeof config.reactions == "object") {
-          var type = c.value.shift()
-          var reaction = config.reactions[type]
-          if(typeof reaction == "string")
-            reaction = require(reaction)
-          reaction(c, createNext(c, f))  
+          if(config.reactions[c.value[0]]) {
+            var type = c.value.shift()
+            var reaction = config.reactions[type]
+            if(typeof reaction == "string")
+              reaction = require(reaction)
+            reaction(c, createNext(c, f))  
+          } else {
+            plasma.emit(c, createNext(c, f))
+          }
         }
       } else
         next && next(r || c)
